@@ -1,107 +1,116 @@
 # Pi3_Access_Point
 Raspberry Pi 3 Access Point (using Pi3 buitin wifi)
+Check Ethernet & Wifi by lady ada
+Before continuing make sure the Ethernet cable is connected in and you can ping out from the Pi
+raspberry_pi_ifconfigtestether.gif
+You will also want to set up your WiFi dongle. run sudo shutdown -h now and then plug in the WiFi module when the Pi is off so you don't cause a power surge.
 
-For this instructable you will need:
+When it comes back up check with ifconfig -a that you see wlan0 - the WiFi module.
+raspberry_pi_ifconfiga.gif
+Install software by lady ada
+Next up we install the software onto the Pi that will act as the 'hostap' (host access point) You need internet access for this step so make sure that Ethernet connection is up!
 
-Raspberry pi (I'm using a model B)
-Another computer if you want to SSH into your pi
-Hard drive with your media
-SD card for the raspberry pi operating system
-Raspberry pi wifi dongle (you can also use Ethernet)\
-A power supply for the raspberry pi (a minimum of 1 AMP and 5 Volts for the Raspberry Pi model B)
-A powered USB hub
+ sudo apt-get update
+sudo apt-get install hostapd isc-dhcp-server
 
+(You may need to sudo apt-get update if the Pi can't seem to get to the apt-get repositories)
+raspberry_pi_aptgethostapd.gif
+(text above shows udhcpd but that doesnt work as well as isc-dhcp-server, still, the output should look similar)
+Set up DHCP server
 
-Step 2: Updating and Installing
+Next we will edit /etc/dhcp/dhcpd.conf, a file that sets up our DHCP server - this allows wifi connections to automatically get IP addresses, DNS, etc.
 
- Picture of Updating and Installing
- install minidlna.PNG
-To begin we can SSH into our raspberry pi by using a program like putty. After we have done this I recommend updating and upgrading your raspberry pi. You can do this by using the following commands.
+Run this command to edit the file
+ sudo nano /etc/dhcp/dhcpd.conf
+Find the lines that say
+Copy Code
+option domain-name "example.org";
+option domain-name-servers ns1.example.org, ns2.example.org;
+and change them to add a # in the beginning so they say
+Copy Code
+#option domain-name "example.org";
+#option domain-name-servers ns1.example.org, ns2.example.org;
+Find the lines that say
+Copy Code
+# If this DHCP server is the official DHCP server for the local
+# network, the authoritative directive should be uncommented.
+#authoritative;
+and remove the # so it says
+Copy Code
+# If this DHCP server is the official DHCP server for the local
+# network, the authoritative directive should be uncommented.
+authoritative;
+raspberry_pi_authoritatinve.gif
+Then scroll down to the bottom and add the following lines
+Copy Code
+subnet 192.168.42.0 netmask 255.255.255.0 {
+	range 192.168.42.10 192.168.42.50;
+	option broadcast-address 192.168.42.255;
+	option routers 192.168.42.1;
+	default-lease-time 600;
+	max-lease-time 7200;
+	option domain-name "local";
+	option domain-name-servers 8.8.8.8, 8.8.4.4;
+}
+raspberry_pi_iscdhcpconf.gif
+Save the file by typing in Control-X then Y then return
 
-sudo apt-get update
+Run
+ sudo nano /etc/default/isc-dhcp-server
+and scroll down to INTERFACES="" and update it to say INTERFACES="wlan0" 
+raspberry_pi_dhcpwlan0.gif
+close and save the file
+Set up wlan0 for static IP
 
-sudo apt-get upgrade
-Once this is finished we can install the media server software. Use the next command to do this.
+If you happen to have wlan0 active because you set it up, run sudo ifdown wlan0
+There's no harm in running it if you're not sure
+raspberry_pi_ifdownwlan0.gif
+Next we will set up the wlan0 connection to be static and incoming. run sudo nano /etc/network/interfaces to edit the file
 
-sudo apt-get install minidlna
-After you enter this command you will probably be asking if you want to continue. Just press y and then enter. Once that has finished installing it is time for the next step.
+Find the line auto wlan0 and add a # in front of the line, and in front of every line afterwards. If you don't have that line, just make sure it looks like the screenshot below in the end! Basically just remove any old wlan0 configuration settings, we'll be changing them up
 
+Depending on your existing setup/distribution there might be more or less text and it may vary a little bit
 
+Add the lines
+Copy Code
+iface wlan0 inet static
+  address 192.168.42.1
+  netmask 255.255.255.0
+After allow-hotplug wlan0 - see below for an example of what it should look like.  Any other lines afterwards should have a # in front to disable them
+raspberry_pi_staticip.gif
+Save the file (Control-X Y <return>) 
 
+Assign a static IP address to the wifi adapter by running 
+sudo ifconfig wlan0 192.168.42.1
+raspberry_pi_ifconfigwlan0.gif
+Configure Access Point
 
+Now we can configure the access point details. We will set up a password-protected network so only people with the password can connect.
 
-Step 3: Connecting the hard drive
+Create a new file by running sudo nano /etc/hostapd/hostapd.conf
 
- Picture of Connecting the hard drive
-Before we can start our media server we need some media of course. So what we are going to do is make it so that our media hard drive is mounted on start-up.
+Paste the following in, you can change the text after ssid= to another name, that will be the network broadcast name. The password can be changed with the text after wpa_passphrase=
+Copy Code
+interface=wlan0
+driver=rtl871xdrv
+ssid=Pi_AP
+hw_mode=g
+channel=6
+macaddr_acl=0
+auth_algs=1
+ignore_broadcast_ssid=0
+wpa=2
+wpa_passphrase=Raspberry
+wpa_key_mgmt=WPA-PSK
+wpa_pairwise=TKIP
+rsn_pairwise=CCMP
+If you are not using the Adafruit wifi adapters, you may have to change the driver=rtl871xdrv to say driver=nl80211 or something, we don't have tutorial support for that tho, YMMV!
+raspberry_pi_edithostapdconf.gif
+Save as usual. Make sure each line has no extra spaces or tabs at the end or beginning - this file is pretty picky!
 
-To do this the first thing we need to do is plug in our media drive. Make sure you plug it into the powered USB hub and not directly into the raspberry pi because sometimes that can cause problems. Once you have done this we need to go back to putty or whatever SSH client you are using and type in:
+Now we will tell the Pi where to find this configuration file. Run sudo nano /etc/default/hostapd
 
-sudo fdisk -l
-What this does is it shows use important information about the drives that are connected to our raspberry pi. In the picture I have circled the name of my drive in white. In my case it was /dev/sda1. I know this because where I have circled in green says that the drive /dev/sda has 1000 GB which is the size of my drive. In red I have circled the format of the drive which we will need in the next step. You are going to need to know the name of your drive and the format of your drive in the following steps so it is probably a good idea to write them down somewhere.
+Find the line #DAEMON_CONF="" and edit it so it says DAEMON_CONF="/etc/hostapd/hostapd.conf"
+Don't forget to remove the # in front to activate it!
 
-Step 4: Mounting the drive on startup
-
- Picture of Mounting the drive on startup
-We need to have our media drive to be mounted on startup so that we can access its contents. To do this we are going to need to make a folder to mount it to. You can do that by using this command:
-
-sudo mkdir /media/HDD
-What this command does is makes a folder called HDD in the media directory. So once we have made this folder we need to give it read write permissions. We can do this by using this command:
-
-sudo chmod 777 /media/HDD
-This command command tells the folder HDD that it has all permission. This means that it has read and write permissions which is what we wanted.
-
-Now we need to edit the fstab file. This is the file that the raspberry pi operating system refers to when it is looking to see which dives to mount at startup so we need to put our media drive in that file. We can do that by using the command:
-
-sudo nano /etc/fstab
-Once in this file you will notice that it is not the same as Microsoft Word which you might be familiar to. You need to use the arrow keys to navigate around. So go to the bottom of this file and you are going to add this line:
-
-/dev/sda1    /media/HDD   vfat    defaults     0        2
-Ok so the line that you just added might be a bit confusing so I will try to explain it. The first part where is says /dev/sda1 is the is the name of the hard drive that you want to add. Remember from the previous step. The next part is the place where you are going to mount it to. Then we have the format of the hard drive. In this case it is fat32. And finally the 0 and 2 at the end are permissions.
-
-Now it you reboot the raspberry pi:
-
-sudo reboot
-and move into the directory /media/HDD
-
-cd /media/HDD
-And run this command:
-
-ls
-You should be able to see all the files on your hard drive.
-
-Step 5: Configuring MiniDLNA
-
- Picture of Configuring MiniDLNA
- friendly name.PNG minidlna restart.PNG minidlna force reload.PNG
-To start configuring MiniDLNA we need to edit the config file. This can be done by using this command:
-
-sudo nano /etc/minidlna.conf
-Once you have that file open we are going to need to change that part that looks like this:
-
-# * "A" for audio (eg. media_dir=A,/var/lib/minidlna/music)
-# * "P" for pictures (eg. media_dir=P,/var/lib/minidlna/pictures)
-# * "V" for video (eg. media_dir=V,/var/lib/minidlna/videos)
-to this:
-
-media_dir=A,/media/HDD/Music
-media_dir=P,/media/HDD/Pictures
-media_dir=V,/media/HDD/Movies
-
-and this:
-
-# Name that the DLNA server presents to clients.
-#friendly_name=
-to this:
-
-# Name that the DLNA server presents to clients.
-friendly_name=RASPI MINIDLNA
-In the line above where I have put RASPI MINIDLNA can be whatever you want.
-
-Then press control x to exit and press y if it asks if you want to "save modified buffers" then press enter to confirm.
-
-Now that we have configured MiniDLNA we have to refresh it. To do this you can run the following commands:
-
-sudo service minidlna restart
-sudo service minidlna force-reload
-Now if you hop back onto a windows computer or any Upnp compatible device you should be able to see your server. On window if you click on start then computer then on the left hand side click on network you should be able to see your raspberry pi Minidlna server called RASPI MINIDLNA under the media devices section.
+Then save the file
